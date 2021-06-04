@@ -1,0 +1,76 @@
+//create resource group
+
+RG=<resource group name>
+
+az group create --name $RG --location <location>
+
+
+//create a vnet with one subnet
+az network vnet create \
+    --resource-group $RG \
+    --name MyVNet1 \
+    --address-prefixes 10.10.0.0/16 \
+    --subnet-name FrontendSubnet \
+    --subnet-prefixes 10.10.1.0/24
+
+//create a subnet
+az network vnet subnet create \
+    --address-prefixes 10.10.2.0/24 \
+    --name BackendSubnet \
+    --resource-group $RG \
+    --vnet-name MyVNet1
+
+//create a vm in a vnet/subnet
+az vm create \
+    --resource-group $RG \
+    --name FrontendVM \
+    --vnet-name MyVNet1 \
+    --subnet FrontendSubnet \
+    --image Win2019Datacenter \
+    --admin-username azureuser \
+    --admin-password <password>
+
+
+//install iis in vm
+az vm extension set \
+    --publisher Microsoft.Compute \
+    --name CustomScriptExtension \
+    --vm-name FrontendVM \
+    --resource-group $RG \
+    --settings '{"commandToExecute":"powershell.exe Install-WindowsFeature -Name Web-Server"}' \
+    --no-wait
+
+//create nsg
+az network nsg create \
+    --name MyNsg \
+    --resource-group $RG
+
+//create nsg rule
+az network nsg rule create \
+    --resource-group $RG \
+    --name MyNSGRule \
+    --nsg-name MyNsg \
+    --priority 4096 \
+    --source-address-prefixes '*' \
+    --source-port-ranges '*' \
+    --destination-address-prefixes '*' \
+    --destination-port-ranges 80 443 3389 \
+    --access Deny \
+    --protocol TCP \
+    --direction Inbound \
+    --description "Deny from specific IP address ranges on 80, 443 and 3389."
+
+//update subnet with nsg rule
+az network vnet subnet update \
+    --resource-group $RG \
+    --name BackendSubnet \
+    --vnet-name MyVNet1 \
+    --network-security-group MyNsg
+
+//enable network watcher
+az network watcher configure \
+    --locations <location> \
+    --enabled true \
+    --resource-group $RG
+
+a
