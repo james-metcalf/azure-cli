@@ -4,6 +4,12 @@ RG=<resource group name>
 
 az group create --name $RG --location <location>
 
+//create public ip address
+az network public-ip create \
+    --resource-group [sandbox resource group name] \
+    --name PIP-VNG-Azure-VNet-1 \
+    --allocation-method Dynamic
+
 
 //create a vnet with one subnet
 az network vnet create \
@@ -30,6 +36,13 @@ az vm create \
     --admin-username azureuser \
     --admin-password <password>
 
+//list vm details
+az vm list \
+    --resource-group $rg \
+    --show-details \
+    --query "[*].{Name:name, PrivateIP:privateIps, PublicIP:publicIps}" \
+    --output table
+
 
 //install iis in vm
 az vm extension set \
@@ -40,6 +53,38 @@ az vm extension set \
     --settings '{"commandToExecute":"powershell.exe Install-WindowsFeature -Name Web-Server"}' \
     --no-wait
 
+//create app security group
+az network asg create \
+    --resource-group $rg \
+    --name ERP-DB-SERVERS-ASG
+
+//assign asg to nic
+az network nic ip-config update \
+    --resource-group $rg \
+    --application-security-groups ERP-DB-SERVERS-ASG \
+    --name ipconfigDataServer \
+    --nic-name DataServerVMNic \
+    --vnet-name ERP-servers \
+    --subnet Databases
+
+//reference asg from nsg
+az network nsg rule update \
+    --resource-group $rg \
+    --nsg-name ERP-SERVERS-NSG \
+    --name httpRule \
+    --direction Inbound \
+    --priority 150 \
+    --source-address-prefixes "" \
+    --source-port-ranges '*' \
+    --source-asgs ERP-DB-SERVERS-ASG \
+    --destination-address-prefixes 10.0.0.4 \
+    --destination-port-ranges 80 \
+    --access Deny \
+    --protocol Tcp \
+    --description "Deny from DataServer to AppServer on port 80 using application security group"
+
+
+
 //create nsg
 az network nsg create \
     --name MyNsg \
@@ -47,18 +92,18 @@ az network nsg create \
 
 //create nsg rule
 az network nsg rule create \
-    --resource-group $RG \
-    --name MyNSGRule \
-    --nsg-name MyNsg \
-    --priority 4096 \
-    --source-address-prefixes '*' \
-    --source-port-ranges '*' \
-    --destination-address-prefixes '*' \
-    --destination-port-ranges 80 443 3389 \
-    --access Deny \
-    --protocol TCP \
+    --resource-group $rg \
+    --nsg-name ERP-SERVERS-NSG \
+    --name httpRule \
     --direction Inbound \
-    --description "Deny from specific IP address ranges on 80, 443 and 3389."
+    --priority 150 \
+    --source-address-prefixes 10.0.1.4 \
+    --source-port-ranges '*' \
+    --destination-address-prefixes 10.0.0.4 \
+    --destination-port-ranges 80 \
+    --access Deny \
+    --protocol Tcp \
+    --description "Deny from DataServer to AppServer on port 80"
 
 //update subnet with nsg rule
 az network vnet subnet update \
@@ -73,4 +118,3 @@ az network watcher configure \
     --enabled true \
     --resource-group $RG
 
-a
